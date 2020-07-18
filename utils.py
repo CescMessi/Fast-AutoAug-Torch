@@ -63,30 +63,32 @@ def subsample_dataset(total_set, n_splits, split_idx, reduced_size=60000):
 
         return SimpleSampler(train_idx), SimpleSampler(valid_idx)
 
-    print(f'Using Reduced ImageNet Dataset with size {reduced_size}, now spliting the data ...')
-    targets = total_set.targets
-    #idx120 = sorted(random.sample(list(range(1000)), k=120))
-    idx120 = [15, 22, 42, 65, 66, 70, 91, 101, 103, 114, 120, 127, 128, 129, 130, 132, 134, 140,
-              153, 162, 185, 192, 200, 206, 209, 222, 228, 237, 249, 257, 259, 261, 263, 267, 268,
-              271, 288, 305, 315, 325, 332, 334, 336, 345, 363, 384, 385, 390, 392, 413, 416, 417,
-              419, 434, 446, 453, 461, 466, 475, 484, 490, 492, 516, 518, 552, 558, 560, 563, 566,
-              568, 569, 576, 579, 580, 584, 591, 592, 600, 611, 612, 614, 623, 626, 627, 631, 640,
-              651, 665, 667, 673, 677, 678, 681, 689, 691, 699, 716, 744, 745, 770, 798, 804, 815,
-              821, 824, 825, 836, 847, 863, 891, 928, 939, 945, 946, 952, 955, 970, 982, 993, 998]
-    # filter out irrelevant classes
-    valid_idx = list(filter(lambda x: targets[x] in idx120, list(range(len(targets)))))
-    new_targets = [targets[idx] for idx in valid_idx]
-
-    # pick 120 classes only
-    total_set = SampledDataset(total_set, SimpleSampler(valid_idx))
-    # pick the reduced_size samples
-    reduced_sampler, _ = get_stratified_split_samplers(total_set, 1, 0, len(total_set) - reduced_size,
-                                                       targets=new_targets)
-    reduced_set = SampledDataset(total_set, reduced_sampler)
-    new_targets = [new_targets[idx] for idx in reduced_sampler]
+    # print(f'Using Reduced ImageNet Dataset with size {reduced_size}, now spliting the data ...')
+    # targets = total_set.targets
+    # #idx120 = sorted(random.sample(list(range(1000)), k=120))
+    # idx120 = [15, 22, 42, 65, 66, 70, 91, 101, 103, 114, 120, 127, 128, 129, 130, 132, 134, 140,
+    #           153, 162, 185, 192, 200, 206, 209, 222, 228, 237, 249, 257, 259, 261, 263, 267, 268,
+    #           271, 288, 305, 315, 325, 332, 334, 336, 345, 363, 384, 385, 390, 392, 413, 416, 417,
+    #           419, 434, 446, 453, 461, 466, 475, 484, 490, 492, 516, 518, 552, 558, 560, 563, 566,
+    #           568, 569, 576, 579, 580, 584, 591, 592, 600, 611, 612, 614, 623, 626, 627, 631, 640,
+    #           651, 665, 667, 673, 677, 678, 681, 689, 691, 699, 716, 744, 745, 770, 798, 804, 815,
+    #           821, 824, 825, 836, 847, 863, 891, 928, 939, 945, 946, 952, 955, 970, 982, 993, 998]
+    # # filter out irrelevant classes
+    # valid_idx = list(filter(lambda x: targets[x] in idx120, list(range(len(targets)))))
+    # new_targets = [targets[idx] for idx in valid_idx]
+    #
+    # # pick 120 classes only
+    # total_set = SampledDataset(total_set, SimpleSampler(valid_idx))
+    # # pick the reduced_size samples
+    # reduced_sampler, _ = get_stratified_split_samplers(total_set, 1, 0, len(total_set) - reduced_size,
+    #                                                    targets=new_targets)
+    # reduced_set = SampledDataset(total_set, reduced_sampler)
+    # new_targets = [new_targets[idx] for idx in reduced_sampler]
     # 4:1 train and val split
-    train_sampler, val_sampler = get_stratified_split_samplers(reduced_set, n_splits, split_idx,
-                                                               reduced_size//5, targets=new_targets)
+    # train_sampler, val_sampler = get_stratified_split_samplers(total_set, n_splits, split_idx,
+    #                                                            reduced_size//5, targets=new_targets)
+    # 此处修改为直接使用k-fold
+    train_sampler, val_sampler = get_stratified_split_samplers(total_set, n_splits, split_idx)
     train_set = SampledDataset(total_set, train_sampler)
     val_set = SampledDataset(total_set, val_sampler)
     return train_set, val_set

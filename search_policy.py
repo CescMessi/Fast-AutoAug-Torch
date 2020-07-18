@@ -55,7 +55,7 @@ def get_args():
                         help='batch size for training (default: 128)')
     parser.add_argument('--epochs', type=int, default=120,
                         help='number of epochs to train (default: 600)')
-    parser.add_argument('--workers', type=int, default=12,
+    parser.add_argument('--workers', type=int, default=8,
                         help='dataloader threads')
     parser.add_argument('--data-dir', type=str, default=os.path.expanduser('~/.encoding/data'),
                         help='data location for training')
@@ -90,7 +90,10 @@ def train_network(args, gpu_manager, split_idx, return_dict):
     print('gpu: {}, split_idx: {}'.format(gpu, split_idx))
 
     # single gpu training only for evaluating the configurations
-    model = encoding.models.get_model(args.model)
+    # model = encoding.models.get_model(args.model)
+    from torchvision.models import resnet50
+    model = resnet50(pretrained=True)
+    model.fc = nn.Linear(2048, 45)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(),
                                 lr=args.lr,
@@ -105,14 +108,22 @@ def train_network(args, gpu_manager, split_idx, return_dict):
 
     # init dataloader
     base_size = args.base_size if args.base_size is not None else int(1.0 * args.crop_size / 0.875)
-    transform_train, _ = get_transform(
+    transform_train, transform_val = get_transform(
             args.dataset, args.base_size, args.crop_size)
-    total_set = encoding.datasets.get_dataset('imagenet', root=args.data_dir,
-                                              transform=transform_train, train=True, download=True)
-    trainset, valset = subsample_dataset(total_set, args.nfolds, split_idx, args.reduced_size)
+    from myDataset import MyDataset
+    # 此处原项目为载入imagenet数据集，减少至120类后进行k-fold切分 改为自己数据集 直接进行k-fold
+    # total_set = encoding.datasets.get_dataset('imagenet', root=args.data_dir,
+    #                                           transform=transform_train, train=True, download=True)
+    total_set = MyDataset(root=args.data_dir, transforms=transform_train, train=True)
+    trainset,  valset = subsample_dataset(total_set, args.nfolds, split_idx, args.reduced_size)
+    # train_path = os.path.join(args.data_dir, 'train')
+    # val_path = os.path.join(args.data_dir, 'valid')
+    # trainset = MyDataset(root=train_path, transforms=transform_train)
+
     train_loader = torch.utils.data.DataLoader(
         trainset, batch_size=args.batch_size, shuffle=True,
         num_workers=args.workers, drop_last=True, pin_memory=True)
+
     # lr scheduler
     lr_scheduler = LR_Scheduler('cos',
                                 base_lr=args.lr,
@@ -129,6 +140,7 @@ def train_network(args, gpu_manager, split_idx, return_dict):
             data, target = data.cuda(gpu), target.cuda(gpu)
             optimizer.zero_grad()
             output = model(data)
+            acc1 = accuracy(output, target, topk=(1,))
             loss = criterion(output, target)
             if args.amp:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
@@ -136,14 +148,17 @@ def train_network(args, gpu_manager, split_idx, return_dict):
             else:
                 loss.backward()
             optimizer.step()
+            # 训练每代打印训练准确率 可删
+            if batch_idx == args.batch_size-1:
+                tqdm.write('train accuracy: {}'.format(acc1[0].item()))
 
     def validate(auto_policy):
         model.eval()
         top1 = AverageMeter()
-        _, transform_val = get_transform(args.dataset, args.base_size, args.crop_size)
         if auto_policy is not None:
-            transform_val.transforms.insert(0, Augmentation(auto_policy))
-        valset.transform = transform_val
+            # 在验证集的Transform最前面插入搜索的policy
+            transform_val.transforms.insert(0, Augmentation([auto_policy]))
+        valset._dataset.transforms = transform_val
         val_loader = torch.utils.data.DataLoader(
             valset, batch_size=args.batch_size, shuffle=False,
             num_workers=args.workers, pin_memory=True)
@@ -160,28 +175,32 @@ def train_network(args, gpu_manager, split_idx, return_dict):
     for epoch in tqdm(range(0, args.epochs)):
         train(epoch)
 
-    #acc = validate(None)
-    #print('baseline accuracy: {}'.format(acc))
+    acc = validate(None)
+    tqdm.write('baseline accuracy: {}'.format(acc.item()))
 
     ops = list(augment_dict.keys())
     sub_policy = at.List(
         at.List(at.Choice(*ops), at.Real(0, 1), at.Real(0, 1)),
         at.List(at.Choice(*ops), at.Real(0, 1), at.Real(0, 1)),
     )
+    # autotorch中的贝叶斯搜索算法不支持Choice，待解决
     searcher = at.searcher.RandomSearcher(sub_policy.cs)
     # avoid same defaults
     config = searcher.get_config()
-    for i in range(args.num_trials):
+    result = 0
+    for i in tqdm(range(args.num_trials)):
         config = searcher.get_config()
         auto_policy = sub_policy.sample(**config)
         acc = validate(auto_policy)
+        if acc.item() > result:
+            result = acc.item()
         searcher.update(config, acc.item(), done=True)
-
+    tqdm.write('now accuracy: {}'.format(result))
     gpu_manager.release(gpu)
     topK_cfgs = searcher.get_topK_configs(5)
     policy = [sub_policy.sample(**cfg) for cfg in topK_cfgs]
     return_dict[split_idx] = policy
-    #print(f'{split_idx}, searcher._results: {searcher._results}')
+    # print(f'{split_idx}, accuracy: {}')
 
 def train_network_map(args):
     train_network(*args)
@@ -200,6 +219,7 @@ class MyPool(mp.pool.Pool):
 class GPUManager(object):
     def __init__(self, ngpus):
         self._gpus = mp.Manager().Queue()
+        # 遍历gpu编号插入队列，修改后可指定GPU运行
         for i in range(ngpus):
             self._gpus.put(i)
 
