@@ -149,8 +149,8 @@ def train_network(args, gpu_manager, split_idx, return_dict):
                 loss.backward()
             optimizer.step()
             # 训练每代打印训练准确率 可删
-            if batch_idx == args.batch_size-1:
-                tqdm.write('train accuracy: {}'.format(acc1[0].item()))
+            # if batch_idx == args.batch_size-1:
+            #     tqdm.write('train accuracy: {}'.format(acc1[0].item()))
 
     def validate(auto_policy):
         model.eval()
@@ -231,7 +231,7 @@ class GPUManager(object):
 
 def main():
     # temporary solution for imp DeprecationWarning
-    os.environ['PYTHONWARNINGS'] = 'ignore:semaphore_tracker:UserWarning'
+    # os.environ['PYTHONWARNINGS'] = 'ignore:semaphore_tracker:UserWarning'
     logging.basicConfig(level=logging.DEBUG)
 
     args = get_args()

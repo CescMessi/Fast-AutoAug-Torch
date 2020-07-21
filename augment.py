@@ -7,9 +7,60 @@
 ##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 from encoding.transforms.autoaug import *
+import albumentations as A
+import imgaug.augmenters as iaa
+import torchvision.transforms as T
+import numpy as np
+from PIL import Image
 
 def Posterize2(*args, **kwargs):
     return Posterize(*args, **kwargs)
+
+def ElasticTransform(img, v):
+    np_img = np.asarray(img)
+    t = A.ElasticTransform(sigma=v, p=1)
+    np_img = t(image=np_img)['image']
+    return Image.fromarray(np_img)
+
+def GaussianBlur(img, v):
+    np_img = np.asarray(img)
+    t = A.GaussianBlur(blur_limit=2*int(v)+1, p=1)
+    np_img = t(image=np_img)['image']
+    return Image.fromarray(np_img)
+
+def HSV(img, v):
+    np_img = np.asarray(img)
+    v_int = int(v)
+    t = A.HueSaturationValue(
+        hue_shift_limit=v_int,
+        sat_shift_limit=v_int+10,
+        val_shift_limit=v_int,
+        p=1
+    )
+    np_img = t(image=np_img)['image']
+    return Image.fromarray(np_img)
+
+def Superpixels(img, v):
+    np_img = np.asarray(img)
+    t = A.IAASuperpixels(n_segments=int(v), p=1)
+    np_img = t(image=np_img)['image']
+    return Image.fromarray(np_img)
+
+def EdgeDetect(img, v):
+    np_img = np.asarray(img)
+    t = iaa.EdgeDetect(alpha=(0.0, v))
+    np_img = t(image=np_img)
+    return Image.fromarray(np_img)
+
+def CoarseDropout(img, v):
+    np_img = np.asarray(img)
+    t = A.CoarseDropout(max_holes=int(v))
+    np_img = t(image=np_img)['image']
+    return Image.fromarray(np_img)
+
+def RandomAffine(img, v):
+    t = T.RandomAffine(degrees=v, translate=(0.2,0.2), scale=(0.8,1.2), shear=8, resample=Image.BILINEAR)
+    return t(img)
 
 def augment_list():  # oeprations and their ranges
     l = [
@@ -30,6 +81,12 @@ def augment_list():  # oeprations and their ranges
         (Cutout, 0, 0.2),  # 14
         (CutoutAbs, 0, 20),
         (Posterize2, 0, 4),
+        (ElasticTransform, 30, 70),
+        (GaussianBlur, 1, 10),
+        (HSV, 20, 50),
+        (EdgeDetect, 0.2, 0.9),
+        (CoarseDropout, 5, 500),
+        (RandomAffine, 10, 40)
     ]
     return l
 
